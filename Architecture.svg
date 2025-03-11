@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+  <!-- Background -->
+  <rect width="800" height="600" fill="#f8f9fa" />
+  
+  <!-- Title -->
+  <text x="400" y="40" font-family="Arial" font-size="20" text-anchor="middle" font-weight="bold">Windows Dual Audio Manager - Architecture</text>
+  
+  <!-- Audio Capture Layer -->
+  <rect x="50" y="80" width="700" height="100" rx="10" ry="10" fill="#e3f2fd" stroke="#2196f3" stroke-width="2" />
+  <text x="400" y="110" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">Audio Capture Layer</text>
+  
+  <rect x="70" y="130" width="150" height="30" rx="5" ry="5" fill="#bbdefb" stroke="#1e88e5" stroke-width="1" />
+  <text x="145" y="150" font-family="Arial" font-size="12" text-anchor="middle">WasapiLoopbackCapture</text>
+  
+  <rect x="230" y="130" width="150" height="30" rx="5" ry="5" fill="#bbdefb" stroke="#1e88e5" stroke-width="1" />
+  <text x="305" y="150" font-family="Arial" font-size="12" text-anchor="middle">MMDeviceEnumerator</text>
+  
+  <rect x="390" y="130" width="170" height="30" rx="5" ry="5" fill="#bbdefb" stroke="#1e88e5" stroke-width="1" />
+  <text x="475" y="150" font-family="Arial" font-size="12" text-anchor="middle">Default Output Audio Capture</text>
+  
+  <rect x="570" y="130" width="160" height="30" rx="5" ry="5" fill="#bbdefb" stroke="#1e88e5" stroke-width="1" />
+  <text x="650" y="150" font-family="Arial" font-size="12" text-anchor="middle">Raw Audio Data Collection</text>
+  
+  <!-- Audio Processing Layer -->
+  <rect x="50" y="190" width="700" height="100" rx="10" ry="10" fill="#e8f5e9" stroke="#4caf50" stroke-width="2" />
+  <text x="400" y="220" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">Audio Processing Layer</text>
+  
+  <rect x="70" y="240" width="130" height="30" rx="5" ry="5" fill="#c8e6c9" stroke="#43a047" stroke-width="1" />
+  <text x="135" y="260" font-family="Arial" font-size="12" text-anchor="middle">CircularBuffer</text>
+  
+  <rect x="210" y="240" width="130" height="30" rx="5" ry="5" fill="#c8e6c9" stroke="#43a047" stroke-width="1" />
+  <text x="275" y="260" font-family="Arial" font-size="12" text-anchor="middle">BufferedWaveProvider</text>
+  
+  <rect x="350" y="240" width="130" height="30" rx="5" ry="5" fill="#c8e6c9" stroke="#43a047" stroke-width="1" />
+  <text x="415" y="260" font-family="Arial" font-size="12" text-anchor="middle">MediaFoundationResampler</text>
+  
+  <rect x="490" y="240" width="110" height="30" rx="5" ry="5" fill="#c8e6c9" stroke="#43a047" stroke-width="1" />
+  <text x="545" y="260" font-family="Arial" font-size="12" text-anchor="middle">SampleChannel</text>
+  
+  <rect x="610" y="240" width="120" height="30" rx="5" ry="5" fill="#c8e6c9" stroke="#43a047" stroke-width="1" />
+  <text x="670" y="260" font-family="Arial" font-size="12" text-anchor="middle">Format Conversion</text>
+  
+  <!-- Output Management Layer -->
+  <rect x="50" y="300" width="700" height="100" rx="10" ry="10" fill="#fff3e0" stroke="#ff9800" stroke-width="2" />
+  <text x="400" y="330" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">Output Management Layer</text>
+  
+  <rect x="70" y="350" width="130" height="30" rx="5" ry="5" fill="#ffe0b2" stroke="#fb8c00" stroke-width="1" />
+  <text x="135" y="370" font-family="Arial" font-size="12" text-anchor="middle">AdvancedAudioOutput</text>
+  
+  <rect x="210" y="350" width="130" height="30" rx="5" ry="5" fill="#ffe0b2" stroke="#fb8c00" stroke-width="1" />
+  <text x="275" y="370" font-family="Arial" font-size="12" text-anchor="middle">Volume Control</text>
+  
+  <rect x="350" y="350" width="130" height="30" rx="5" ry="5" fill="#ffe0b2" stroke="#fb8c00" stroke-width="1" />
+  <text x="415" y="370" font-family="Arial" font-size="12" text-anchor="middle">WasapiOut</text>
+  
+  <rect x="490" y="350" width="110" height="30" rx="5" ry="5" fill="#ffe0b2" stroke="#fb8c00" stroke-width="1" />
+  <text x="545" y="370" font-family="Arial" font-size="12" text-anchor="middle">Device Management</text>
+  
+  <rect x="610" y="350" width="120" height="30" rx="5" ry="5" fill="#ffe0b2" stroke="#fb8c00" stroke-width="1" />
+  <text x="670" y="370" font-family="Arial" font-size="12" text-anchor="middle">VirtualAudioDevice</text>
+  
+  <!-- Threading & System Layer -->
+  <rect x="50" y="410" width="700" height="80" rx="10" ry="10" fill="#e1f5fe" stroke="#03a9f4" stroke-width="2" />
+  <text x="400" y="440" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">Threading & System Layer</text>
+  
+  <rect x="70" y="460" width="100" height="30" rx="5" ry="5" fill="#b3e5fc" stroke="#039be5" stroke-width="1" />
+  <text x="120" y="480" font-family="Arial" font-size="12" text-anchor="middle">Task Management</text>
+  
+  <rect x="180" y="460" width="160" height="30" rx="5" ry="5" fill="#b3e5fc" stroke="#039be5" stroke-width="1" />
+  <text x="260" y="480" font-family="Arial" font-size="12" text-anchor="middle">High-Priority Audio Processing</text>
+  
+  <rect x="350" y="460" width="160" height="30" rx="5" ry="5" fill="#b3e5fc" stroke="#039be5" stroke-width="1" />
+  <text x="430" y="480" font-family="Arial" font-size="12" text-anchor="middle">Concurrent Buffer Management</text>
+  
+  <rect x="520" y="460" width="210" height="30" rx="5" ry="5" fill="#b3e5fc" stroke="#039be5" stroke-width="1" />
+  <text x="625" y="480" font-family="Arial" font-size="12" text-anchor="middle">Windows Audio Session Control</text>
+  
+  <!-- UI Layer -->
+  <rect x="50" y="500" width="700" height="90" rx="10" ry="10" fill="#f3e5f5" stroke="#9c27b0" stroke-width="2" />
+  <text x="400" y="530" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">User Interface Layer</text>
+  
+  <rect x="70" y="550" width="100" height="30" rx="5" ry="5" fill="#e1bee7" stroke="#8e24aa" stroke-width="1" />
+  <text x="120" y="570" font-family="Arial" font-size="12" text-anchor="middle">MainForm</text>
+  
+  <rect x="180" y="550" width="100" height="30" rx="5" ry="5" fill="#e1bee7" stroke="#8e24aa" stroke-width="1" />
+  <text x="230" y="570" font-family="Arial" font-size="12" text-anchor="middle">Device Controls</text>
+  
+  <rect x="290" y="550" width="110" height="30" rx="5" ry="5" fill="#e1bee7" stroke="#8e24aa" stroke-width="1" />
+  <text x="345" y="570" font-family="Arial" font-size="12" text-anchor="middle">Theme Support</text>
+  
+  <rect x="410" y="550" width="130" height="30" rx="5" ry="5" fill="#e1bee7" stroke="#8e24aa" stroke-width="1" />
+  <text x="475" y="570" font-family="Arial" font-size="12" text-anchor="middle">System Tray Integration</text>
+  
+  <rect x="550" y="550" width="170" height="30" rx="5" ry="5" fill="#e1bee7" stroke="#8e24aa" stroke-width="1" />
+  <text x="635" y="570" font-family="Arial" font-size="12" text-anchor="middle">Audio Visualization</text>
+  
+  <!-- Connections -->
+  <line x1="400" y1="180" x2="400" y2="190" stroke="#2196f3" stroke-width="2" />
+  <line x1="400" y1="290" x2="400" y2="300" stroke="#4caf50" stroke-width="2" />
+  <line x1="400" y1="400" x2="400" y2="410" stroke="#ff9800" stroke-width="2" />
+  <line x1="400" y1="490" x2="400" y2="500" stroke="#03a9f4" stroke-width="2" />
+  
+  <!-- Audio Flow Arrows -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+  </defs>
+  <path d="M750,150 Q770,250 750,350" fill="none" stroke="#333" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowhead)" />
+  <text x="760" y="250" font-family="Arial" font-size="12" text-anchor="middle" transform="rotate(90 760,250)">Audio Flow</text>
+</svg>
