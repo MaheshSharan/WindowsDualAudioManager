@@ -2,12 +2,6 @@
 
 A lightweight application that allows Windows users to output audio to multiple devices simultaneously, with individual volume control for each output.
 
-## Architecture
-
-Below is the architecture diagram of Windows Dual Audio Manager showing how the different components work together:
-
-![Windows Dual Audio Manager Architecture](Architecture.svg)
-
 ## Features
 
 - Play audio through multiple audio outputs simultaneously
