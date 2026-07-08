@@ -62,3 +62,4 @@ $RECYCLE.BIN/
 
 # Local config files
 *.local.json
+refactor_todo.md
