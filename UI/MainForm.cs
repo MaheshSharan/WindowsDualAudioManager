@@ -1,15 +1,16 @@
 using AudioDual.Core;
+using AudioDual.Core.Diagnostics;
 using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 using System.Windows.Forms;
 
 namespace AudioDual
 {
     public partial class MainForm : Form
     {
+        private readonly IAppLogger _logger;
         private readonly AdvancedAudioEngine _audioEngine;
         private readonly AppConfiguration _config;
         private readonly NotifyIcon _notifyIcon;
@@ -27,8 +28,9 @@ namespace AudioDual
             this.Text = $"Windows Dual Audio Manager v{version?.Major}.{version?.Minor}.{version?.Build}";
             
             // Initialize core components
-            _audioEngine = new AdvancedAudioEngine();
-            _config = AppConfiguration.Load();
+            _logger = new FileAppLogger();
+            _config = AppConfiguration.Load(_logger);
+            _audioEngine = new AdvancedAudioEngine(_config, _logger);
             _audioDevices = new List<AudioDevice>();
             
             // Setup system tray icon
@@ -108,15 +110,13 @@ namespace AudioDual
         {
             var devices = _audioEngine.GetAudioDevices();
             
-            // Keep track of enabled state for devices we already have
-            var enabledStates = new Dictionary<string, bool>();
+            // Preserve volumes for devices that are already active before the list is rebuilt
             var deviceVolumes = new Dictionary<string, float>();
             
             foreach (var device in _audioDevices)
             {
                 if (device.IsEnabled)
                 {
-                    enabledStates[device.Id] = true;
                     deviceVolumes[device.Id] = device.Volume;
                 }
             }
@@ -196,6 +196,7 @@ namespace AudioDual
             }
             catch (Exception ex)
             {
+                _logger.LogError("MainForm", "Error setting startup-with-Windows registry key.", ex);
                 MessageBox.Show($"Error setting startup: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -232,7 +233,10 @@ namespace AudioDual
                     }
                 }
             }
-            catch {}
+            catch (Exception ex)
+            {
+                _logger.LogWarning("MainForm", $"Could not read system theme preference, defaulting to light theme: {ex.Message}");
+            }
             
             return false;
         }
@@ -354,39 +358,27 @@ namespace AudioDual
             // Set startup with Windows
             SetStartupWithWindows(_config.RunAtStartup);
             
-            _config.Save();
+            _config.Save(_logger);
             MessageBox.Show("Settings saved successfully!", "Settings", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         
         private void audioVisualizer_Paint(object sender, PaintEventArgs e)
         {
-            // Draw audio visualization
-            if (_audioEngine != null)
-            {
-                int height = audioVisualizer.Height;
-                int width = audioVisualizer.Width;
-                
-                using (var brush = new SolidBrush(Color.FromArgb(0, 120, 215)))
-                {
-                    // Draw a simple visualization (this would be enhanced with actual audio levels)
-                    foreach (var device in _audioDevices.Where(d => d.IsEnabled))
-                    {
-                        float level = device.Volume * 0.8f; // Simulate audio level with device volume
-                        int barHeight = (int)(height * level);
-                        int barWidth = width / (_audioDevices.Count(d => d.IsEnabled) * 3);
-                        
-                        // Get index of this device among enabled devices
-                        int index = _audioDevices.Where(d => d.IsEnabled).ToList().IndexOf(device);
-                        int xPos = (index * barWidth * 3) + barWidth;
-                        
-                        e.Graphics.FillRectangle(brush, 
-                                               xPos, 
-                                               height - barHeight, 
-                                               barWidth, 
-                                               barHeight);
-                    }
-                }
-            }
+            // The previous implementation drew bars from each device's static Volume
+            // setting rather than any real audio signal, which looked like a live meter
+            // but was not one. Rather than ship fake data, this is left as an honest
+            // placeholder state until LatencyTelemetry-backed real levels land (Phase 3
+            // of the v1.2 refactor); see WindowsDualAudioManager_v1.2_Refactor_Plan.md.
+            using var mutedTextBrush = new SolidBrush(_isDarkTheme ? Color.Gray : Color.DarkGray);
+            using var font = new Font(Font.FontFamily, 8f, FontStyle.Italic);
+            const string pendingMessage = "Live level meter — coming in the v1.2 UI phase";
+            var textSize = e.Graphics.MeasureString(pendingMessage, font);
+            e.Graphics.DrawString(
+                pendingMessage,
+                font,
+                mutedTextBrush,
+                (audioVisualizer.Width - textSize.Width) / 2f,
+                (audioVisualizer.Height - textSize.Height) / 2f);
         }
         
         #endregion

@@ -1,101 +1,88 @@
+using AudioDual.Core.Diagnostics;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace AudioDual.Core
 {
     public class AdvancedAudioEngine : IDisposable
     {
+        private const int IdlePollIntervalMs = 1;
+        private const int ErrorBackoffMs = 5;
+        private const int DirectProcessingDeviceThreshold = 2;
+
         private readonly MMDeviceEnumerator _deviceEnumerator;
         private readonly ConcurrentDictionary<string, AdvancedAudioOutput> _activeOutputs;
+        private readonly ConcurrentQueue<(byte[] Buffer, int BytesRecorded)> _audioQueue;
+        private readonly CancellationTokenSource _cancellation;
+        private readonly IAppLogger _logger;
+        private readonly int _configuredBufferMilliseconds;
         private WasapiCapture? _loopbackCapture;
         private WaveFormat _captureFormat;
-        private readonly VirtualAudioDevice _virtualDevice;
-        private readonly ConcurrentQueue<(byte[] Buffer, int BytesRecorded)> _audioQueue;
         private bool _isRunning;
-        private Task? _processingTask;
-        private readonly CancellationTokenSource _cancellation;
-        
+        private Thread? _processingThread;
+
         public event EventHandler<AudioDataEventArgs>? AudioDataAvailable;
-        
-        public AdvancedAudioEngine()
+
+        public AdvancedAudioEngine(AppConfiguration configuration, IAppLogger? logger = null)
         {
-            // Subscribe to unhandled exceptions
-            AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
-            {
-                try
-                {
-                    var exception = args.ExceptionObject as Exception;
-                    string message = "Unhandled exception: " + (exception?.ToString() ?? "Unknown error");
-                    Console.WriteLine(message);
-                    
-                    // Log to file
-                    string logPath = Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                        "AudioDual", 
-                        "error_log.txt");
-                        
-                    Directory.CreateDirectory(Path.GetDirectoryName(logPath));
-                    File.AppendAllText(logPath, $"[{DateTime.Now}] {message}\n");
-                    
-                    // If fatal, try to clean up before termination
-                    if (args.IsTerminating)
-                    {
-                        StopAudioCapture();
-                        foreach (var output in _activeOutputs.Values)
-                        {
-                            try { output.Dispose(); } catch { }
-                        }
-                    }
-                }
-                catch { /* Last resort handler should never throw */ }
-            };
-            
+            _logger = logger ?? new FileAppLogger();
+            _configuredBufferMilliseconds = configuration.AudioBufferMs;
+
+            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+
             _deviceEnumerator = new MMDeviceEnumerator();
             _activeOutputs = new ConcurrentDictionary<string, AdvancedAudioOutput>();
             _captureFormat = new WaveFormat(48000, 16, 2);
-            _virtualDevice = new VirtualAudioDevice();
             _audioQueue = new ConcurrentQueue<(byte[] Buffer, int BytesRecorded)>();
             _cancellation = new CancellationTokenSource();
-            
-            // Start the processing task with higher priority
+
             _isRunning = true;
-            _processingTask = Task.Factory.StartNew(
-                ProcessAudioQueueAsync, 
-                _cancellation.Token,
-                TaskCreationOptions.LongRunning | TaskCreationOptions.PreferFairness, 
-                TaskScheduler.Default);
-            
-            // Try to set thread priority, using proper Thread.Priority property instead of SetThreadPriority method
-            if (_processingTask.Status == TaskStatus.Running)
+            _processingThread = new Thread(ProcessAudioQueueLoop)
             {
-                try {
-                    var threadFieldInfo = typeof(Task).GetField("m_thread", 
-                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                    if (threadFieldInfo != null)
+                IsBackground = true,
+                Priority = ThreadPriority.Highest,
+                Name = "AudioDual.RoutingThread"
+            };
+            _processingThread.Start();
+        }
+
+        private void OnUnhandledException(object? sender, UnhandledExceptionEventArgs args)
+        {
+            try
+            {
+                var exception = args.ExceptionObject as Exception;
+                _logger.LogError("AdvancedAudioEngine", "Unhandled exception in application domain.", exception);
+
+                if (args.IsTerminating)
+                {
+                    StopAudioCapture();
+                    foreach (var output in _activeOutputs.Values)
                     {
-                        var thread = threadFieldInfo.GetValue(_processingTask) as Thread;
-                        if (thread != null)
+                        try
                         {
-                            thread.Priority = ThreadPriority.Highest;
+                            output.Dispose();
+                        }
+                        catch (Exception disposeException)
+                        {
+                            _logger.LogError("AdvancedAudioEngine", "Error disposing output during termination.", disposeException);
                         }
                     }
                 }
-                catch { /* Ignore if we can't set thread priority */ }
+            }
+            catch
+            {
+                // Last-resort handler must never throw, or the process terminates without
+                // any record of the original failure.
             }
         }
-        
+
         public List<AudioDevice> GetAudioDevices()
         {
             var devices = new List<AudioDevice>();
             string defaultDeviceId = _deviceEnumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia).ID;
-            
+
             foreach (var device in _deviceEnumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
             {
                 devices.Add(new AudioDevice
@@ -107,61 +94,60 @@ namespace AudioDual.Core
                     Volume = _activeOutputs.TryGetValue(device.ID, out var output) ? output.Volume : 1.0f
                 });
             }
-            
+
             return devices;
         }
-        
+
         public bool EnableDevice(string deviceId, float volume = 1.0f)
         {
             try
             {
                 var device = _deviceEnumerator.GetDevice(deviceId);
-                if (device == null) return false;
-                
-                // Check if device is already enabled
+                if (device == null)
+                {
+                    return false;
+                }
+
                 if (_activeOutputs.ContainsKey(deviceId))
                 {
                     _activeOutputs[deviceId].SetVolume(volume);
                     return true;
                 }
-                
-                // Start audio capture if this is the first device
+
                 if (_activeOutputs.IsEmpty)
                 {
                     StartAudioCapture();
                 }
-                
-                // Create new output device
-                var outputDevice = new AdvancedAudioOutput(device, volume, _captureFormat, 500);
+
+                var outputDevice = new AdvancedAudioOutput(device, volume, _captureFormat, _configuredBufferMilliseconds, _logger);
                 _activeOutputs[deviceId] = outputDevice;
-                
+
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error enabling device: {ex.Message}");
+                _logger.LogError("AdvancedAudioEngine", $"Error enabling device '{deviceId}'.", ex);
                 return false;
             }
         }
-        
+
         public bool DisableDevice(string deviceId)
         {
             if (_activeOutputs.TryRemove(deviceId, out var output))
             {
                 output.Dispose();
-                
-                // If no more outputs, stop capturing
+
                 if (_activeOutputs.IsEmpty)
                 {
                     StopAudioCapture();
                 }
-                
+
                 return true;
             }
-            
+
             return false;
         }
-        
+
         public bool SetDeviceVolume(string deviceId, float volume)
         {
             if (_activeOutputs.TryGetValue(deviceId, out var output))
@@ -169,64 +155,62 @@ namespace AudioDual.Core
                 output.SetVolume(volume);
                 return true;
             }
-            
+
             return false;
         }
-        
+
         private void StartAudioCapture()
         {
             try
             {
-                // Get the default device for capturing system audio
                 var defaultDevice = _deviceEnumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-                
-                // Create a loopback capture with optimized latency settings
+
                 _loopbackCapture = new WasapiLoopbackCapture(defaultDevice)
                 {
                     ShareMode = AudioClientShareMode.Shared
                 };
-                _captureFormat = _loopbackCapture.WaveFormat; // Fixed typo from WWaveFormat to WaveFormat
-                
-                // Set up event handlers with direct processing for low latency
+                _captureFormat = _loopbackCapture.WaveFormat;
+
                 _loopbackCapture.DataAvailable += OnAudioDataAvailable;
-                _loopbackCapture.RecordingStopped += (s, e) => {
+                _loopbackCapture.RecordingStopped += (s, e) =>
+                {
                     _loopbackCapture?.Dispose();
                     _loopbackCapture = null;
                 };
-                
-                // Start capturing with a smaller buffer for reduced latency
+
                 _loopbackCapture.StartRecording();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error starting audio capture: {ex.Message}");
+                _logger.LogError("AdvancedAudioEngine", "Error starting audio capture.", ex);
             }
         }
-        
+
         private void StopAudioCapture()
         {
             _loopbackCapture?.StopRecording();
         }
-        
+
         private void OnAudioDataAvailable(object? sender, WaveInEventArgs e)
         {
-            if (e.BytesRecorded <= 0) return;
-            
+            if (e.BytesRecorded <= 0)
+            {
+                return;
+            }
+
             try
             {
-                // For reduced latency, process directly in some cases
-                if (_activeOutputs.Count <= 2) // Direct processing for 1-2 devices
+                if (_activeOutputs.Count <= DirectProcessingDeviceThreshold)
                 {
                     foreach (var output in _activeOutputs.Values)
                     {
                         output.ProcessAudio(e.Buffer, e.BytesRecorded);
                     }
-                    // Still notify subscribers
+
                     AudioDataAvailable?.Invoke(this, new AudioDataEventArgs(e.Buffer, e.BytesRecorded));
                     return;
                 }
-                
-                // Otherwise use queuing for 3+ devices
+
                 byte[] bufferCopy = new byte[e.BytesRecorded];
                 Buffer.BlockCopy(e.Buffer, 0, bufferCopy, 0, e.BytesRecorded);
                 _audioQueue.Enqueue((bufferCopy, e.BytesRecorded));
@@ -234,199 +218,201 @@ namespace AudioDual.Core
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in audio data handling: {ex.Message}");
+                _logger.LogError("AdvancedAudioEngine", "Error in audio data handling.", ex);
             }
         }
-        
-        private async Task ProcessAudioQueueAsync()
+
+        /// <summary>
+        /// Drains queued audio for the 3+ device fan-out path (see OnAudioDataAvailable).
+        /// Runs on a dedicated, highest-priority Thread rather than a Task so that thread
+        /// priority is a supported public API call, not a reflection reach into Task's
+        /// private implementation details.
+        ///
+        /// NOTE: this dual-path (direct vs. queued) processing model, and the queue itself,
+        /// are known technical debt — the v1.2 pipeline rework (Phase 1: AudioRouter +
+        /// SpscRingBuffer) replaces both with a single event-driven path. Left as-is here
+        /// deliberately rather than half-refactored, since Phase 1 removes this method entirely.
+        /// </summary>
+        private void ProcessAudioQueueLoop()
         {
-            // Small fixed buffer for memory efficiency
-            byte[] tempBuffer = new byte[16384];
-            
+            var cancellationWaitHandle = _cancellation.Token.WaitHandle;
+
             while (_isRunning && !_cancellation.IsCancellationRequested)
             {
                 try
                 {
-                    bool processed = false;
-                    
-                    // Process all available audio data - increased batch size for efficiency
+                    bool processedAny = false;
+
                     while (_audioQueue.TryDequeue(out var audioData))
                     {
-                        // Send to all outputs with minimal overhead
-                        var buffer = audioData.Buffer.Length <= tempBuffer.Length ? tempBuffer : audioData.Buffer;
-                        if (audioData.Buffer != buffer)
-                            Buffer.BlockCopy(audioData.Buffer, 0, buffer, 0, audioData.BytesRecorded);
-                        
                         foreach (var output in _activeOutputs.Values)
                         {
-                            output.ProcessAudio(buffer, audioData.BytesRecorded);
+                            output.ProcessAudio(audioData.Buffer, audioData.BytesRecorded);
                         }
-                        processed = true;
-                        
-                        // Check cancellation token periodically to avoid long blocking periods
-                        if (_cancellation.IsCancellationRequested) break;
+
+                        processedAny = true;
+
+                        if (_cancellation.IsCancellationRequested)
+                        {
+                            break;
+                        }
                     }
-                    
-                    // Use very short delay when no data to prevent CPU spinning but keep latency low
-                    if (!processed)
+
+                    if (!processedAny)
                     {
-                        await Task.Delay(1, _cancellation.Token);
+                        cancellationWaitHandle.WaitOne(IdlePollIntervalMs);
                     }
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error in audio processing task: {ex.Message}");
-                    await Task.Delay(5, _cancellation.Token); // Reduced from 100ms to 5ms
+                    _logger.LogError("AdvancedAudioEngine", "Error in audio processing loop.", ex);
+                    cancellationWaitHandle.WaitOne(ErrorBackoffMs);
                 }
             }
         }
-        
+
         public void Dispose()
         {
             _isRunning = false;
             _cancellation.Cancel();
-            
+
             try
             {
-                _processingTask?.Wait(1000);
+                _processingThread?.Join(TimeSpan.FromSeconds(1));
             }
-            catch { }
-            
+            catch (Exception ex)
+            {
+                _logger.LogError("AdvancedAudioEngine", "Error joining processing thread during dispose.", ex);
+            }
+
             StopAudioCapture();
-            
+
             foreach (var output in _activeOutputs.Values)
             {
                 output.Dispose();
             }
-            
+
             _activeOutputs.Clear();
-            _virtualDevice.Dispose();
             _cancellation.Dispose();
+
+            AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
         }
-        
+
         // Inner class for output device management
         private class AdvancedAudioOutput : IDisposable
         {
+            private const int MinimumBufferMilliseconds = 15;
+            private const int MaximumBufferMilliseconds = 500;
+            private const int FallbackBufferPaddingMilliseconds = 50;
+            private const int CircularBufferCapacityDivisor = 4; // 250ms circular buffer at typical 48kHz/16-bit/stereo
+            private const int PrefillDivisor = 10; // 100ms of silence pre-fill
+            private const int UnderrunThresholdMs = 30;
+            private const int PersistentUnderrunCount = 3;
+            private const int RecoveryBufferDivisor = 20; // 50ms of recovery data
+            private const int OverflowThresholdMs = 250;
+            private const int OverflowClearCooldownMs = 5000;
+            private const int OverflowRetainedAudioDivisor = 10; // keep last 100ms on clear
+
             private readonly IWavePlayer _wavePlayer;
             private readonly BufferedWaveProvider _waveProvider;
             private readonly SampleChannel _sampleChannel;
-            private float _volume;
-            private readonly byte[] _silenceBuffer;
-            private readonly int _bufferSize;
-            private long _lastBufferClearTime;
-            private readonly object _bufferLock = new object();
+            private readonly object _bufferLock = new();
             private readonly WaveFormat _format;
-            private readonly CircularBuffer _circularBuffer; // Added for smoother playback
+            private readonly CircularBuffer _circularBuffer;
+            private readonly IAppLogger _logger;
+            private float _volume;
+            private long _lastBufferClearTime;
             private bool _isStarting = true;
-            private int _underrunCounter = 0;
-            
+            private int _underrunCounter;
+
             public float Volume => _volume;
-            
-            public AdvancedAudioOutput(MMDevice device, float initialVolume, WaveFormat format, int bufferMs)
+
+            public AdvancedAudioOutput(MMDevice device, float initialVolume, WaveFormat format, int bufferMilliseconds, IAppLogger logger)
             {
+                _logger = logger;
                 _volume = initialVolume;
                 _lastBufferClearTime = Environment.TickCount64;
                 _format = format;
-                
-                // Maintain a constant buffer size - best value determined empirically for most devices
-                int actualBufferMs = 120; // Fixed buffer size that works well with most hardware
-                
-                // Create a circular buffer for smoother audio delivery
-                _circularBuffer = new CircularBuffer(format.AverageBytesPerSecond / 4); // 250ms circular buffer
-                
-                // Create providers for audio processing with optimized settings
-                _waveProvider = new BufferedWaveProvider(format) {
-                    DiscardOnBufferOverflow = false // Changed to avoid losing audio data
+
+                int actualBufferMs = Math.Clamp(bufferMilliseconds, MinimumBufferMilliseconds, MaximumBufferMilliseconds);
+
+                _circularBuffer = new CircularBuffer(format.AverageBytesPerSecond / CircularBufferCapacityDivisor);
+
+                _waveProvider = new BufferedWaveProvider(format)
+                {
+                    DiscardOnBufferOverflow = false
                 };
-                
-                // Calculate buffer size for stable playback
-                _bufferSize = format.AverageBytesPerSecond * actualBufferMs / 1000;
-                _waveProvider.BufferLength = _bufferSize * 2; // Double for safety
-                
-                // 10ms of silence for gap filling
-                _silenceBuffer = new byte[format.AverageBytesPerSecond / 100]; 
-                
-                // Set up volume control
+
+                int bufferSize = format.AverageBytesPerSecond * actualBufferMs / 1000;
+                _waveProvider.BufferLength = bufferSize * 2;
+
                 _sampleChannel = new SampleChannel(_waveProvider);
                 _sampleChannel.Volume = _volume;
-                
+
                 try
                 {
-                    // Standard shared mode for consistent playback across devices
                     _wavePlayer = new WasapiOut(
                         device,
                         AudioClientShareMode.Shared,
-                        true,  // Event-driven for responsive playback
+                        true,
                         actualBufferMs);
-                    
+
                     _wavePlayer.Init(_sampleChannel);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Primary mode failed: {ex.Message}, trying fallback mode");
-                    // Fallback mode with more conservative settings
+                    _logger.LogWarning("AdvancedAudioOutput", $"Event-driven WASAPI init failed for '{device.FriendlyName}', falling back to timer-driven mode: {ex.Message}");
+
                     _wavePlayer = new WasapiOut(
                         device,
                         AudioClientShareMode.Shared,
-                        false, // Timer-based fallback
-                        actualBufferMs + 50);
-                    
+                        false,
+                        actualBufferMs + FallbackBufferPaddingMilliseconds);
+
                     _wavePlayer.Init(_sampleChannel);
                 }
-                
-                // Pre-buffer before starting playback to avoid initial stutter
+
                 PrefillBuffer();
-                
-                // Start playback
                 _wavePlayer.Play();
             }
-            
+
             private void PrefillBuffer()
             {
-                // Pre-fill with silence to prevent initial stutter - 100ms of audio
-                byte[] initialBuffer = new byte[_format.AverageBytesPerSecond / 10];
+                byte[] initialBuffer = new byte[_format.AverageBytesPerSecond / PrefillDivisor];
                 _waveProvider.AddSamples(initialBuffer, 0, initialBuffer.Length);
             }
-            
+
             public void ProcessAudio(byte[] buffer, int bytesRecorded)
             {
                 lock (_bufferLock)
                 {
                     try
                     {
-                        // Add to circular buffer first for smoothing
                         _circularBuffer.Write(buffer, 0, bytesRecorded);
-                        
+
                         long now = Environment.TickCount64;
-                        
-                        // During startup, use more conservative buffer management
-                        if (_isStarting && now - _lastBufferClearTime > 500) // 500ms after start
+
+                        if (_isStarting && now - _lastBufferClearTime > 500)
                         {
                             _isStarting = false;
                         }
-                        
-                        // Monitor buffer health
+
                         double bufferedMs = (double)_waveProvider.BufferedBytes / _format.AverageBytesPerSecond * 1000;
-                        
-                        if (bufferedMs < 30) // Critical underrun threshold (30ms)
+
+                        if (bufferedMs < UnderrunThresholdMs)
                         {
                             _underrunCounter++;
-                            
-                            if (_underrunCounter >= 3) // Persistent underrun detected
+
+                            if (_underrunCounter >= PersistentUnderrunCount)
                             {
-                                // Add additional data from circular buffer to recover
-                                byte[] recoveryBuffer = new byte[_format.AverageBytesPerSecond / 20]; // 50ms of data
+                                byte[] recoveryBuffer = new byte[_format.AverageBytesPerSecond / RecoveryBufferDivisor];
                                 int bytesRead = _circularBuffer.Read(recoveryBuffer, 0, recoveryBuffer.Length);
-                                
+
                                 if (bytesRead > 0)
                                 {
                                     _waveProvider.AddSamples(recoveryBuffer, 0, bytesRead);
                                 }
-                                
+
                                 _underrunCounter = 0;
                             }
                         }
@@ -434,131 +420,115 @@ namespace AudioDual.Core
                         {
                             _underrunCounter = 0;
                         }
-                        
-                        // Manage overall buffer size to prevent drift
-                        if (bufferedMs > 250 && now - _lastBufferClearTime > 5000) // Clear if over 250ms buffered
+
+                        if (bufferedMs > OverflowThresholdMs && now - _lastBufferClearTime > OverflowClearCooldownMs)
                         {
-                            int bytesToKeep = _format.AverageBytesPerSecond / 10; // Keep last 100ms of audio
+                            int bytesToKeep = _format.AverageBytesPerSecond / OverflowRetainedAudioDivisor;
                             byte[] recentAudio = new byte[bytesToKeep];
-                            
-                            // Extract the most recent audio data before clearing
-                            // This is a simplified approach since BufferedWaveProvider doesn't support partial clearing
+
                             _waveProvider.ClearBuffer();
                             _lastBufferClearTime = now;
-                            
-                            // Add the recent audio data back from circular buffer
+
                             int bytesRead = _circularBuffer.Read(recentAudio, 0, bytesToKeep);
                             if (bytesRead > 0)
                             {
                                 _waveProvider.AddSamples(recentAudio, 0, bytesRead);
                             }
-                            
-                            // Also add the current buffer
+
                             _waveProvider.AddSamples(buffer, 0, bytesRecorded);
                         }
                         else
                         {
-                            // Regular processing - add samples directly from the source buffer
                             _waveProvider.AddSamples(buffer, 0, bytesRecorded);
                         }
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Error processing audio: {ex.Message}");
+                        _logger.LogError("AdvancedAudioOutput", "Error processing audio.", ex);
                     }
                 }
             }
-            
+
             public void SetVolume(float volume)
             {
                 _volume = Math.Clamp(volume, 0f, 1f);
                 _sampleChannel.Volume = _volume;
             }
-            
+
             public void Dispose()
             {
-                _wavePlayer?.Stop();
-                _wavePlayer?.Dispose();
+                try
+                {
+                    _wavePlayer.Stop();
+                    _wavePlayer.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("AdvancedAudioOutput", "Error disposing WASAPI output.", ex);
+                }
             }
         }
-        
-        // Implement a circular buffer for audio smoothing
+
+        // Circular buffer used for underrun/overflow recovery smoothing.
+        // NOTE: replaced entirely by SpscRingBuffer in the Phase 1 pipeline rework.
         private class CircularBuffer
         {
             private readonly byte[] _buffer;
+            private readonly object _lockObject = new();
             private int _writePosition;
             private int _readPosition;
             private int _byteCount;
-            private readonly object _lockObject = new object();
-            
+
             public CircularBuffer(int capacity)
             {
                 _buffer = new byte[capacity];
-                _writePosition = 0;
-                _readPosition = 0;
-                _byteCount = 0;
             }
-            
+
             public int Write(byte[] data, int offset, int count)
             {
                 lock (_lockObject)
                 {
                     int totalBytesWritten = 0;
-                    
+
                     if (count > _buffer.Length - _byteCount)
                     {
-                        count = _buffer.Length - _byteCount; // Limit to available space
+                        count = _buffer.Length - _byteCount;
                     }
-                    
-                    // Write to buffer
+
                     while (totalBytesWritten < count)
                     {
                         int bytesToWrite = Math.Min(count - totalBytesWritten, _buffer.Length - _writePosition);
                         Array.Copy(data, offset + totalBytesWritten, _buffer, _writePosition, bytesToWrite);
-                        
+
                         _writePosition = (_writePosition + bytesToWrite) % _buffer.Length;
                         totalBytesWritten += bytesToWrite;
                         _byteCount += bytesToWrite;
                     }
-                    
+
                     return totalBytesWritten;
                 }
             }
-            
+
             public int Read(byte[] data, int offset, int count)
             {
                 lock (_lockObject)
                 {
                     int totalBytesRead = 0;
-                    
-                    count = Math.Min(count, _byteCount); // Limit to available data
-                    
-                    // Read from buffer
+                    count = Math.Min(count, _byteCount);
+
                     while (totalBytesRead < count)
                     {
                         int bytesToRead = Math.Min(count - totalBytesRead, _buffer.Length - _readPosition);
                         Array.Copy(_buffer, _readPosition, data, offset + totalBytesRead, bytesToRead);
-                        
+
                         _readPosition = (_readPosition + bytesToRead) % _buffer.Length;
                         totalBytesRead += bytesToRead;
                         _byteCount -= bytesToRead;
                     }
-                    
+
                     return totalBytesRead;
                 }
             }
-            
-            public void Clear()
-            {
-                lock (_lockObject)
-                {
-                    _readPosition = 0;
-                    _writePosition = 0;
-                    _byteCount = 0;
-                }
-            }
-            
-            public int Count => _byteCount;
         }
     }
 }
