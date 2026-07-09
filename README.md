@@ -1,47 +1,100 @@
-# Windows Dual Audio Manager v1.0.0
+![Windows Dual Audio Manager Banner](assets/banner.jpg)
 
-A lightweight application that allows Windows users to output audio to multiple devices simultaneously, with individual volume control for each output.
+# Windows Dual Audio Manager
 
-## Features
+Route your system audio to multiple output devices simultaneously — speakers, headphones, Bluetooth — with per-device volume control.
 
-- Play audio through multiple audio outputs simultaneously
-- Individual volume control for each device
-- Dark/Light theme support
-- Real-time audio visualization
-- Low latency audio processing
-- System tray integration
-- Startup with Windows option
+---
 
-## Getting Started
+> [!IMPORTANT]
+> **Known Limitation: Bluetooth Sync Delay**
+>
+> If your **Windows default device is a wired/built-in speaker** and you enable a **Bluetooth device** as a secondary output, you will hear an audible delay between the two (typically 150–300ms or more depending on your Bluetooth hardware).
+>
+> **Why this happens:** Bluetooth audio (A2DP) must encode, packetize, and wirelessly transmit every audio frame before it reaches the speaker. This is a hardware-level constraint — no software can eliminate it.
+>
+> **Workaround (sync both devices):** Set your **Bluetooth speaker as the Windows default audio device** first (right-click speaker icon → Sound settings → choose your BT device). Then launch this app and enable your wired/built-in speaker as the secondary output. The result: both devices play in near-sync because our low-latency pipeline handles the fast wired device, and Windows handles the BT device natively.
+>
+> **Volume Scaling Dependency:** Because Windows loopback captures audio *after* the default device's volume mix is applied, lowering the default device's master volume slider will automatically reduce the incoming audio volume sent to secondary devices. Set your primary device volume first, then balance secondary outputs relative to it.
+>
+> There is no universal automatic fix for this — the best pairing depends on what devices you have. Experiment with which device you set as the Windows default.
 
-### Prerequisites
+---
 
-- Windows 10/11
-- .NET 6.0 or newer
+## What It Does
 
-### Installation
+- **Fan-out audio** — play the same system audio on multiple devices at the same time
+- **Per-device volume control** — independently adjust each output's level
+- **Low-latency pipeline** — event-driven WASAPI routing (~30–45ms), not polling buffers
+- **Feedback loop protection** — the app blocks you from enabling the capture source device as an output (which would cause an echo loop) and explains why
+- **Device hotplug** — detects when a device is disconnected mid-session and stops that channel cleanly
+- **System tray** — runs quietly in the background, restore with a double-click
+- **Dark / Light theme** — auto-detects your Windows theme preference
+- **Startup with Windows** — optional, configurable in Settings
+
+---
+
+## How to Use
+
+1. Launch `AudioDual.exe`
+2. The device list shows all active audio endpoints. The device marked **Capture Source** is what the app is capturing audio from (your Windows default device) — **you cannot enable it as an output**
+3. Select any other device and click **Enable Device**
+4. Repeat for additional devices
+5. Use the volume slider to adjust each device independently
+6. Click **Refresh** if you plug in a new device and it doesn't appear
+
+---
+
+## Prerequisites
+
+- Windows 10 / 11
+- .NET 6.0 Runtime or newer ([download](https://dotnet.microsoft.com/download/dotnet/6.0))
+
+## Installation
 
 1. Download the latest release from the [Releases](https://github.com/MaheshSharan/WindowsDualAudioManager/releases) page
-2. Extract the zip file to your preferred location
+2. Extract the zip to any folder
 3. Run `AudioDual.exe`
 
-### Usage
+---
 
-1. Launch the application
-2. Select an audio device from the list
-3. Click "Enable Device"
-4. Repeat steps 2-3 for additional devices
-5. Adjust volume for each device using the slider
+Key properties:
+- **One buffer per output** — no ConcurrentQueue + CircularBuffer + BufferedWaveProvider stack
+- **No polling** — data moves on WASAPI's own callback threads, no `Task.Delay` loop
+- **Adaptive ring buffer** — sized to the device's actual WASAPI period, so Bluetooth devices with large hardware periods don't trigger cascading underruns
+- **MMCSS thread scheduling** — capture thread registered with Windows' Multimedia Class Scheduler for glitch-resistant priority, not a reflection hack
+
+---
+
+## Building from Source
+
+```powershell
+git clone https://github.com/MaheshSharan/WindowsDualAudioManager
+cd WindowsDualAudioManager
+dotnet restore
+dotnet build AudioDual.sln -c Release
+```
+
+Run tests:
+
+```powershell
+dotnet test AudioDual.Core.Tests\AudioDual.Core.Tests.csproj
+```
+
+---
 
 ## Contributing
 
-We welcome contributions! Please see our [Contribution Guidelines](CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+MIT — see [LICENSE.md](LICENSE.md)
 
-## Acknowledgments
+---
 
-- [NAudio](https://github.com/naudio/NAudio) - Audio library for .NET
-- All contributors who have helped improve this application
+## Acknowledgements
+
+- [NAudio](https://github.com/naudio/NAudio) — WASAPI loopback capture and render

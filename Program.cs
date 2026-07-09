@@ -1,3 +1,6 @@
+using System;
+using AudioDual.UI;
+
 namespace AudioDual
 {
     internal static class Program
@@ -5,8 +8,9 @@ namespace AudioDual
         [STAThread]
         static void Main()
         {
-            ApplicationConfiguration.Initialize();
-            Application.Run(new MainForm());
+            var app = new App();
+            app.InitializeComponent();
+            app.Run();
         }
     }
 }
