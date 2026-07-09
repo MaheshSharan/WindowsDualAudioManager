@@ -54,6 +54,17 @@ namespace AudioDual.Core.Routing
                 return true;
             }
 
+            // Guard: prevent routing captured audio back to the same device it's
+            // being captured from — this would create an infinite feedback loop
+            // (audio plays → gets loopback-captured → plays again → echo builds).
+            if (_captureService.CaptureDeviceId == deviceId)
+            {
+                _logger.LogWarning("AudioRouter",
+                    $"Blocked enable for device '{deviceId}' — it is the active loopback capture source. " +
+                    "Routing output to the capture source device would create an audio feedback loop.");
+                return false;
+            }
+
             try
             {
                 var device = _deviceRepository.GetDevice(deviceId);
@@ -61,6 +72,16 @@ namespace AudioDual.Core.Routing
                 if (!_captureService.IsCapturing)
                 {
                     _captureService.Start();
+
+                    // Re-check after starting capture — the device we're about to
+                    // enable may have become the capture source if it's the system default
+                    if (_captureService.CaptureDeviceId == deviceId)
+                    {
+                        _captureService.Stop();
+                        _logger.LogWarning("AudioRouter",
+                            $"Blocked enable for device '{deviceId}' — it became the capture source when capture started.");
+                        return false;
+                    }
                 }
 
                 var channel = new AudioOutputChannel(

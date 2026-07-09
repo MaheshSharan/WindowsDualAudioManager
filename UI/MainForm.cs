@@ -138,13 +138,25 @@ namespace AudioDual
                 }
             }
             
-            // Update UI with device list
+            // Update UI with device list, marking the capture source device
+            string? captureDeviceId = _audioEngine.GetCaptureDeviceId();
             lvDevices.Items.Clear();
             foreach (var device in _audioDevices)
             {
                 var item = new ListViewItem(device.Name);
                 item.SubItems.Add(device.IsDefault ? "Yes" : "No");
-                item.SubItems.Add(device.IsEnabled ? "Enabled" : "Disabled");
+
+                // Show the capture source device with a distinct status so the user
+                // understands why it can't be enabled as an output target
+                string status;
+                if (device.Id == captureDeviceId)
+                    status = "Capture Source";
+                else if (device.IsEnabled)
+                    status = "Enabled";
+                else
+                    status = "Disabled";
+
+                item.SubItems.Add(status);
                 item.SubItems.Add($"{device.Volume * 100:0}%");
                 item.Tag = device;
                 lvDevices.Items.Add(item);
@@ -317,12 +329,48 @@ namespace AudioDual
             }
             else
             {
+                // UI-level guard: warn the user before the engine silently rejects
+                string? captureDeviceId = _audioEngine.GetCaptureDeviceId();
+                bool isCaptureSource = _selectedDevice.Id == captureDeviceId;
+
+                // If capture isn't running yet, the first device enabled will trigger
+                // capture start — check if *this* device would become the capture source
+                // (i.e., it's the current system default render endpoint)
+                if (!isCaptureSource && captureDeviceId == null && _selectedDevice.IsDefault)
+                {
+                    isCaptureSource = true;
+                }
+
+                if (isCaptureSource)
+                {
+                    MessageBox.Show(
+                        "This device is currently the Windows default audio output.\n\n" +
+                        "The application captures system audio from the default device using WASAPI " +
+                        "loopback. Routing that captured audio back to the same device would create " +
+                        "an audio feedback loop (echo).\n\n" +
+                        "To use this device as a secondary output, first change your Windows default " +
+                        "audio device to a different one (right-click the speaker icon in the taskbar " +
+                        "→ Sound settings → choose a different output device).",
+                        "Cannot Enable — Feedback Loop Prevention",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+
                 // Enable the device
                 success = _audioEngine.EnableDevice(_selectedDevice.Id, _selectedDevice.Volume);
                 if (success)
                 {
                     _selectedDevice.IsEnabled = true;
                     _activeOutputs[_selectedDevice.Id] = true;
+                }
+                else
+                {
+                    MessageBox.Show(
+                        "Failed to enable the selected device. Check the application log for details.",
+                        "Device Enable Failed",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
                 }
             }
             

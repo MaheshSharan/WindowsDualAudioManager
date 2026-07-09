@@ -67,6 +67,13 @@ namespace AudioDual.Core
         }
 
         /// <summary>
+        /// Returns the device ID of the endpoint currently being loopback-captured,
+        /// or null if capture is not active. Used by the UI to identify the capture
+        /// source and prevent the user from enabling it as an output (feedback loop).
+        /// </summary>
+        public string? GetCaptureDeviceId() => _captureService.CaptureDeviceId;
+
+        /// <summary>
         /// Real per-channel buffering health and signal levels, computed from actual
         /// sample data as it flows through each output channel. Exposed for the level
         /// meter to read from once it's rebuilt against real data instead of drawing

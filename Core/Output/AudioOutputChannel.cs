@@ -47,10 +47,43 @@ namespace AudioDual.Core.Output
             _telemetry = telemetry;
             _logger = logger;
 
-            // Ring buffer holds raw capture-format bytes. Sized to the configured target
-            // latency plus a small safety margin so a brief scheduling delay doesn't
-            // immediately manifest as an audible underrun.
-            int ringBufferMilliseconds = options.TargetLatencyMs + RingBufferSafetyMarginMs;
+            // Ring buffer holds raw capture-format bytes. For wired devices, the
+            // configured target latency (+safety margin) is sufficient. But Bluetooth
+            // devices negotiate much larger WASAPI periods (100-300ms) — if the ring
+            // buffer is smaller than what WASAPI reads per callback, every single read
+            // underruns, fills with silence, and the perceived delay compounds rapidly.
+            // Size the buffer to the larger of our configured target or what the device
+            // actually needs.
+            int devicePeriodMs = options.TargetLatencyMs;
+            try
+            {
+                // The device's default period tells us how much data WASAPI will
+                // request per callback — we need at least this much buffered
+                var audioPeriod = device.AudioClient.DefaultDevicePeriod;
+                int deviceDefaultPeriodMs = (int)(audioPeriod / 10000); // 100ns units to ms
+                if (deviceDefaultPeriodMs > devicePeriodMs)
+                {
+                    devicePeriodMs = deviceDefaultPeriodMs;
+                    logger.LogInformation("AudioOutputChannel",
+                        $"Device '{device.FriendlyName}' has a default period of {deviceDefaultPeriodMs}ms " +
+                        $"(higher than configured {options.TargetLatencyMs}ms). " +
+                        "Ring buffer sized to device period to avoid cascading underruns.");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("AudioOutputChannel",
+                    $"Could not query device period for '{device.FriendlyName}': {ex.Message}. " +
+                    "Using configured target latency for ring buffer sizing.");
+            }
+
+            int ringBufferMilliseconds = devicePeriodMs + RingBufferSafetyMarginMs;
+            // Ensure at least 3x the device period to have enough data across callbacks
+            int minRingBufferMs = devicePeriodMs * 3;
+            if (ringBufferMilliseconds < minRingBufferMs)
+            {
+                ringBufferMilliseconds = minRingBufferMs;
+            }
             int ringBufferCapacityBytes = captureFormat.AverageBytesPerSecond * ringBufferMilliseconds / 1000;
             var overflowPolicy = options.OverflowPolicy == RingBufferOverflowPolicyOption.DropNewest
                 ? RingBufferOverflowPolicy.DropNewest
@@ -75,6 +108,19 @@ namespace AudioDual.Core.Output
             IWaveProvider finalWaveProvider = telemetryTap.ToWaveProvider();
 
             _wavePlayer = CreateWavePlayer(device, shareMode, options.TargetLatencyMs, finalWaveProvider);
+
+            // Log the actual WASAPI buffer period — for Bluetooth devices, the driver
+            // often negotiates a much larger period (100–300ms) than what we requested.
+            // This is expected and not a bug, but it's critical diagnostic info.
+            if (_wavePlayer is WasapiOut wasapiOut)
+            {
+                var actualLatency = wasapiOut.OutputWaveFormat;
+                _logger.LogInformation("AudioOutputChannel",
+                    $"Device '{device.FriendlyName}' initialized. " +
+                    $"Requested latency: {options.TargetLatencyMs}ms, " +
+                    $"Output format: {actualLatency}");
+            }
+
             _wavePlayer.Play();
         }
 

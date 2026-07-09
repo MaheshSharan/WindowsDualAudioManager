@@ -44,6 +44,13 @@ namespace AudioDual.Core.Capture
 
         public WaveFormat WaveFormat { get; private set; } = new WaveFormat(48000, 32, 2);
 
+        /// <summary>
+        /// The device ID of the render endpoint currently being loopback-captured.
+        /// Null when capture is not active. Used by AudioRouter to prevent enabling
+        /// output on the same device (which would create a feedback loop).
+        /// </summary>
+        public string? CaptureDeviceId { get; private set; }
+
         public bool IsCapturing => _capture is not null;
 
         public void Start()
@@ -54,6 +61,7 @@ namespace AudioDual.Core.Capture
             }
 
             var device = _negotiator.ResolveDefaultRenderEndpoint();
+            CaptureDeviceId = device.ID;
 
             _capture = new WasapiLoopbackCapture(device)
             {
@@ -102,6 +110,7 @@ namespace AudioDual.Core.Capture
 
             _capture?.Dispose();
             _capture = null;
+            CaptureDeviceId = null;
             _threadBoostAttempted = 0;
         }
 
