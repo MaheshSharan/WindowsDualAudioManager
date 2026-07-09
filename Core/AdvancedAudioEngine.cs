@@ -46,6 +46,18 @@ namespace AudioDual.Core
             _router = new AudioRouter(_captureService, _deviceRepository, options, _telemetry, _threadBooster, _logger);
         }
 
+        public event EventHandler<string> DeviceRemoved
+        {
+            add => _deviceRepository.DeviceRemoved += value;
+            remove => _deviceRepository.DeviceRemoved -= value;
+        }
+
+        public event EventHandler<string> DeviceStateChanged
+        {
+            add => _deviceRepository.DeviceStateChanged += value;
+            remove => _deviceRepository.DeviceStateChanged -= value;
+        }
+
         public List<AudioDevice> GetAudioDevices()
         {
             return _deviceRepository.GetRenderDevices(_router.ActiveDeviceVolumes);
@@ -63,7 +75,22 @@ namespace AudioDual.Core
 
         public bool SetDeviceVolume(string deviceId, float volume)
         {
-            return _router.SetDeviceVolume(deviceId, volume);
+            if (_router.SetDeviceVolume(deviceId, volume))
+            {
+                return true;
+            }
+
+            try
+            {
+                var device = _deviceRepository.GetDevice(deviceId);
+                device.AudioEndpointVolume.MasterVolumeLevelScalar = volume;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("AdvancedAudioEngine", $"Error setting Windows system volume for device '{deviceId}'.", ex);
+                return false;
+            }
         }
 
         /// <summary>

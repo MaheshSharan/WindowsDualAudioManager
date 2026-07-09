@@ -13,6 +13,8 @@ Route your system audio to multiple output devices simultaneously — speakers, 
 >
 > **Workaround (sync both devices):** Set your **Bluetooth speaker as the Windows default audio device** first (right-click speaker icon → Sound settings → choose your BT device). Then launch this app and enable your wired/built-in speaker as the secondary output. The result: both devices play in near-sync because our low-latency pipeline handles the fast wired device, and Windows handles the BT device natively.
 >
+> **Volume Scaling Dependency:** Because Windows loopback captures audio *after* the default device's volume mix is applied, lowering the default device's master volume slider will automatically reduce the incoming audio volume sent to secondary devices. Set your primary device volume first, then balance secondary outputs relative to it.
+>
 > There is no universal automatic fix for this — the best pairing depends on what devices you have. Experiment with which device you set as the Windows default.
 
 ---
@@ -53,17 +55,6 @@ Route your system audio to multiple output devices simultaneously — speakers, 
 3. Run `AudioDual.exe`
 
 ---
-
-## Architecture (v1.2)
-
-The v1.2 rewrite replaced a stacked multi-buffer polling pipeline (~250ms–1200ms latency) with a single-buffer event-driven design:
-
-```
-WasapiLoopbackCapture (WASAPI event callback)
-    → AudioRouter  (fans data to all active output channels)
-        → AudioOutputChannel × N  (one lock-free ring buffer per device)
-            → WasapiOut (event-driven render, per device)
-```
 
 Key properties:
 - **One buffer per output** — no ConcurrentQueue + CircularBuffer + BufferedWaveProvider stack

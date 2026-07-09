@@ -50,6 +50,15 @@ namespace AudioDual.Core.Devices
             foreach (var device in _deviceEnumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
             {
                 bool isActive = activeVolumesByDeviceId.TryGetValue(device.ID, out var volume);
+                float systemVolume = 1.0f;
+                try
+                {
+                    systemVolume = device.AudioEndpointVolume.MasterVolumeLevelScalar;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("AudioDeviceRepository", $"Could not query volume for '{device.FriendlyName}': {ex.Message}");
+                }
 
                 devices.Add(new AudioDevice
                 {
@@ -57,7 +66,7 @@ namespace AudioDual.Core.Devices
                     Name = device.FriendlyName,
                     IsDefault = device.ID == defaultDeviceId,
                     IsEnabled = isActive,
-                    Volume = isActive ? volume : 1.0f
+                    Volume = isActive ? volume : systemVolume
                 });
             }
 
