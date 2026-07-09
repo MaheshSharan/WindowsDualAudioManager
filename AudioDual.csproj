@@ -7,9 +7,9 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.2.0</Version>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
+    <FileVersion>1.2.0.0</FileVersion>
     <Authors>MaheshSharan</Authors>
     <Product>Windows Dual Audio Manager</Product>
     <Description>Route audio to multiple output devices simultaneously</Description>
@@ -33,6 +33,11 @@
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.1.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="AudioDual.Core.Tests\**" />
+    <EmbeddedResource Remove="AudioDual.Core.Tests\**" />
+    <None Remove="AudioDual.Core.Tests\**" />
   </ItemGroup>
 
 </Project>
