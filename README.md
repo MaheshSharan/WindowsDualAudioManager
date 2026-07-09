@@ -1,4 +1,6 @@
-# Windows Dual Audio Manager v1.2
+![Windows Dual Audio Manager Banner](assets/banner.jpg)
+
+# Windows Dual Audio Manager
 
 Route your system audio to multiple output devices simultaneously — speakers, headphones, Bluetooth — with per-device volume control.
 

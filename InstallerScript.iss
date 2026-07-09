@@ -2,7 +2,7 @@
 ; For use with Inno Setup
 
 #define MyAppName "Windows Dual Audio Manager"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "MaheshSharan"
 #define MyAppURL "https://github.com/MaheshSharan/WindowsDualAudioManager"
 #define MyAppExeName "AudioDual.exe"
@@ -22,6 +22,7 @@ Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
+SetupIconFile=UI\app.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -35,8 +36,6 @@ Source: "bin\Release\net8.0-windows\{#MyAppExeName}"; DestDir: "{app}"; Flags: i
 Source: "bin\Release\net8.0-windows\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LICENSE.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "UserGuide.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "Architecture.svg"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

@@ -55,11 +55,12 @@ namespace AudioDual.UI
             // Re-use application icon
             try
             {
-                var iconUri = new Uri("pack://application:,,,/UI/app.ico", UriKind.RelativeOrAbsolute);
+                var iconUri = new Uri("pack://application:,,,/UI/app.png", UriKind.RelativeOrAbsolute);
                 var iconStream = System.Windows.Application.GetResourceStream(iconUri);
                 if (iconStream != null)
                 {
-                    _notifyIcon.Icon = new System.Drawing.Icon(iconStream.Stream);
+                    using var bitmap = new System.Drawing.Bitmap(iconStream.Stream);
+                    _notifyIcon.Icon = System.Drawing.Icon.FromHandle(bitmap.GetHicon());
                 }
                 else
                 {
@@ -102,6 +103,7 @@ namespace AudioDual.UI
             // Load settings into UI
             chkStartMinimized.IsChecked = _config.StartMinimized;
             chkRunAtStartup.IsChecked = _config.RunAtStartup;
+            chkExclusiveMode.IsChecked = _config.PreferExclusiveModeOutput;
             sliderLatency.Value = _config.AudioBufferMs;
 
             RefreshAudioDevices();
@@ -303,6 +305,7 @@ namespace AudioDual.UI
         {
             _config.StartMinimized = chkStartMinimized.IsChecked ?? false;
             _config.RunAtStartup = chkRunAtStartup.IsChecked ?? false;
+            _config.PreferExclusiveModeOutput = chkExclusiveMode.IsChecked ?? false;
             _config.AudioBufferMs = (int)sliderLatency.Value;
 
             SetStartupWithWindows(_config.RunAtStartup);

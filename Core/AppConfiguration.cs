@@ -27,6 +27,8 @@ namespace AudioDual.Core
 
         public bool RunAtStartup { get; set; }
 
+        public bool PreferExclusiveModeOutput { get; set; }
+
         /// <summary>
         /// Target output latency in milliseconds, consumed directly by
         /// <see cref="AdvancedAudioEngine"/> when sizing each device's playback buffer.

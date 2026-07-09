@@ -16,6 +16,7 @@
     <Description>Route audio to multiple output devices simultaneously</Description>
     <Copyright>Copyright © 2024</Copyright>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <ApplicationIcon>UI\app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -41,4 +42,7 @@
     <None Remove="AudioDual.Core.Tests\**" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Resource Include="UI\app.png" />
+  </ItemGroup>
 </Project>

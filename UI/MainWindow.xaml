@@ -10,7 +10,8 @@
         Foreground="#E0E0E0"
         FontFamily="Segoe UI, Roboto, Outfit, sans-serif"
         WindowStartupLocation="CenterScreen"
-        ResizeMode="CanMinimize">
+        ResizeMode="CanMinimize"
+        Icon="app.png">
     
     <Window.Resources>
         <!-- Modern ScrollViewer style -->
@@ -206,8 +207,9 @@
 
                 <!-- Center: Startup / Minimize preferences -->
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <CheckBox x:Name="chkStartMinimized" Content="Start Minimized to System Tray" Foreground="#E0E0E0" Margin="0,0,0,8" Cursor="Hand"/>
-                    <CheckBox x:Name="chkRunAtStartup" Content="Run Automatically at Startup" Foreground="#E0E0E0" Cursor="Hand"/>
+                    <CheckBox x:Name="chkStartMinimized" Content="Start Minimized to System Tray" Foreground="#E0E0E0" Margin="0,0,0,6" Cursor="Hand"/>
+                    <CheckBox x:Name="chkRunAtStartup" Content="Run Automatically at Startup" Foreground="#E0E0E0" Margin="0,0,0,6" Cursor="Hand"/>
+                    <CheckBox x:Name="chkExclusiveMode" Content="Prefer WASAPI Exclusive Mode" Foreground="#E0E0E0" Cursor="Hand"/>
                 </StackPanel>
 
                 <!-- Right: Save Settings -->

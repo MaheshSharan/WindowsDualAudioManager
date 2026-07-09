@@ -40,7 +40,8 @@ namespace AudioDual.Core
 
             var options = new AudioRouterOptions
             {
-                TargetLatencyMs = configuration.AudioBufferMs
+                TargetLatencyMs = configuration.AudioBufferMs,
+                PreferExclusiveModeOutput = configuration.PreferExclusiveModeOutput
             };
 
             _router = new AudioRouter(_captureService, _deviceRepository, options, _telemetry, _threadBooster, _logger);
