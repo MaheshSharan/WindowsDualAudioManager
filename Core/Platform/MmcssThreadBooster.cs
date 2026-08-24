@@ -25,7 +25,10 @@ namespace AudioDual.Core.Platform
 
         private enum AvThreadPriority
         {
-            Critical = 4
+            Low = -1,
+            Normal = 0,
+            High = 1,
+            Critical = 2
         }
 
         private IntPtr _avrtHandle = IntPtr.Zero;

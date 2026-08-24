@@ -2,7 +2,7 @@
 ; For use with Inno Setup
 
 #define MyAppName "Windows Dual Audio Manager"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.2.1"
 #define MyAppPublisher "MaheshSharan"
 #define MyAppURL "https://github.com/MaheshSharan/WindowsDualAudioManager"
 #define MyAppExeName "AudioDual.exe"

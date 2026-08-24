@@ -33,7 +33,7 @@ namespace AudioDual.Core
 
             _deviceRepository = new AudioDeviceRepository(_logger);
             _threadBooster = new MmcssThreadBooster(_logger);
-            _telemetry = new LatencyTelemetry(_logger);
+            _telemetry = new LatencyTelemetry();
 
             var negotiator = new CaptureFormatNegotiator(_deviceRepository.DeviceEnumerator);
             _captureService = new LoopbackCaptureService(negotiator, _threadBooster, _logger);
@@ -92,6 +92,11 @@ namespace AudioDual.Core
                 _logger.LogError("AdvancedAudioEngine", $"Error setting Windows system volume for device '{deviceId}'.", ex);
                 return false;
             }
+        }
+
+        public bool UpdateTargetLatency(int targetLatencyMs)
+        {
+            return _router.UpdateTargetLatency(targetLatencyMs);
         }
 
         /// <summary>

@@ -31,12 +31,6 @@ namespace AudioDual.Core.Diagnostics
         }
 
         private readonly ConcurrentDictionary<string, ChannelState> _channels = new();
-        private readonly IAppLogger _logger;
-
-        public LatencyTelemetry(IAppLogger logger)
-        {
-            _logger = logger;
-        }
 
         public void ReportBufferedMilliseconds(string channelId, double bufferedMilliseconds)
         {
@@ -47,14 +41,12 @@ namespace AudioDual.Core.Diagnostics
         {
             var channel = GetOrAddChannel(channelId);
             Interlocked.Increment(ref channel.UnderrunCount);
-            _logger.LogWarning("LatencyTelemetry", $"Underrun on channel '{channelId}': {shortfallMilliseconds:F1}ms shortfall.");
         }
 
         public void ReportOverrun(string channelId, int discardedBytes)
         {
             var channel = GetOrAddChannel(channelId);
             Interlocked.Increment(ref channel.OverrunCount);
-            _logger.LogWarning("LatencyTelemetry", $"Overrun on channel '{channelId}': discarded {discardedBytes} bytes.");
         }
 
         /// <summary>

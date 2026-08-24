@@ -1,21 +1,21 @@
 @echo off
-echo Building Windows Dual Audio Manager v1.0.0 Release...
+echo Building Windows Dual Audio Manager v1.2.1 Release...
 
 :: Clean previous builds
-dotnet clean -c Release
+dotnet clean AudioDual.sln -c Release
 
 :: Restore packages
-dotnet restore
+dotnet restore AudioDual.sln
 
 :: Build release version
-dotnet build -c Release
+dotnet build AudioDual.sln -c Release
 
 :: Create output directory for installer if it doesn't exist
 if not exist "installer" mkdir installer
 
 echo.
 echo Build complete. Release files are located in:
-echo %CD%\bin\Release\net6.0-windows\
+echo %CD%\bin\Release\net8.0-windows\
 
 :: Instructions for creating installer with Inno Setup
 echo.
@@ -26,5 +26,5 @@ echo 3. Click Build -^> Compile
 
 echo.
 echo Required files for distribution:
-echo - All files in the bin\Release\net6.0-windows directory
+echo - All files in the bin\Release\net8.0-windows directory
 echo.

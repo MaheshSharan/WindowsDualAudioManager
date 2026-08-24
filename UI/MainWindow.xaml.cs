@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -301,17 +302,55 @@ namespace AudioDual.UI
             }
         }
 
-        private void BtnSaveSettings_Click(object sender, RoutedEventArgs e)
+        private async void BtnSaveSettings_Click(object sender, RoutedEventArgs e)
         {
-            _config.StartMinimized = chkStartMinimized.IsChecked ?? false;
-            _config.RunAtStartup = chkRunAtStartup.IsChecked ?? false;
-            _config.PreferExclusiveModeOutput = chkExclusiveMode.IsChecked ?? false;
-            _config.AudioBufferMs = (int)sliderLatency.Value;
+            var saveButton = sender as System.Windows.Controls.Button;
+            if (saveButton is not null)
+            {
+                saveButton.IsEnabled = false;
+            }
 
-            SetStartupWithWindows(_config.RunAtStartup);
-            _config.Save(_logger);
+            try
+            {
+                _config.StartMinimized = chkStartMinimized.IsChecked ?? false;
+                _config.RunAtStartup = chkRunAtStartup.IsChecked ?? false;
+                _config.PreferExclusiveModeOutput = chkExclusiveMode.IsChecked ?? false;
+                _config.AudioBufferMs = (int)sliderLatency.Value;
+                int targetLatencyMs = _config.AudioBufferMs;
 
-            System.Windows.MessageBox.Show("Settings saved successfully!", "Settings", MessageBoxButton.OK, MessageBoxImage.Information);
+                SetStartupWithWindows(_config.RunAtStartup);
+                _config.Save(_logger);
+
+                bool latencyApplied = await Task.Run(() => _audioEngine.UpdateTargetLatency(targetLatencyMs));
+                if (latencyApplied)
+                {
+                    System.Windows.MessageBox.Show("Settings saved and applied.", "Settings", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    System.Windows.MessageBox.Show(
+                        "Settings saved, but one or more active audio outputs could not be reinitialized.",
+                        "Settings",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("UI", "Error applying audio settings.", ex);
+                System.Windows.MessageBox.Show(
+                    "Settings were saved, but the audio latency could not be applied.",
+                    "Settings",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+            finally
+            {
+                if (saveButton is not null)
+                {
+                    saveButton.IsEnabled = true;
+                }
+            }
         }
 
         private void SetStartupWithWindows(bool enable)

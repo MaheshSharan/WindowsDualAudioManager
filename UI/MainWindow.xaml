@@ -92,7 +92,7 @@
             
             <StackPanel>
                 <TextBlock Text="WINDOWS DUAL AUDIO MANAGER" FontSize="20" FontWeight="Bold" Foreground="#0098FF"/>
-                <TextBlock x:Name="txtVersion" Text="v1.2.0" FontSize="11" Foreground="#888888" Margin="0,2,0,0"/>
+                <TextBlock x:Name="txtVersion" Text="v1.2.1" FontSize="11" Foreground="#888888" Margin="0,2,0,0"/>
             </StackPanel>
 
             <Button Grid.Column="1" Content="REFRESH DEVICES" Click="BtnRefresh_Click" Style="{StaticResource AccentButton}"/>
