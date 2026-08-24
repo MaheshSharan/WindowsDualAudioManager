@@ -25,7 +25,8 @@ Route your system audio to multiple output devices simultaneously — speakers, 
 
 - **Fan-out audio** — play the same system audio on multiple devices at the same time
 - **Per-device volume control** — independently adjust each output's level
-- **Low-latency pipeline** — event-driven WASAPI routing (~30–45ms), not polling buffers
+- **Configurable low-latency pipeline** — event-driven WASAPI routing with a 15–500ms latency budget, not polling buffers
+- **Live latency updates** — saving a new latency setting reapplies active output channels without restarting the app
 - **Feedback loop protection** — the app blocks you from enabling the capture source device as an output (which would cause an echo loop) and explains why
 - **Device hotplug** — detects when a device is disconnected mid-session and stops that channel cleanly
 - **System tray** — runs quietly in the background, restore with a double-click
@@ -42,13 +43,14 @@ Route your system audio to multiple output devices simultaneously — speakers, 
 4. Repeat for additional devices
 5. Use the volume slider to adjust each device independently
 6. Click **Refresh** if you plug in a new device and it doesn't appear
+7. Open the latency settings to balance delay and stability. Lower values reduce delay but may stutter; click **Save Settings** to apply a new latency to active outputs without restarting the app. WASAPI Exclusive Mode changes may require a restart.
 
 ---
 
 ## Prerequisites
 
 - Windows 10 / 11
-- .NET 6.0 Runtime or newer ([download](https://dotnet.microsoft.com/download/dotnet/6.0))
+- .NET 8.0 Runtime or newer ([download](https://dotnet.microsoft.com/download/dotnet/8.0))
 
 ## Installation
 

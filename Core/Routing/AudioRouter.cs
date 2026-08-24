@@ -94,6 +94,18 @@ namespace AudioDual.Core.Routing
                     _logger);
 
                 _activeChannels[deviceId] = channel;
+                try
+                {
+                    channel.Start();
+                }
+                catch
+                {
+                    ((ICollection<KeyValuePair<string, AudioOutputChannel>>)_activeChannels)
+                        .Remove(new KeyValuePair<string, AudioOutputChannel>(deviceId, channel));
+                    channel.Dispose();
+                    throw;
+                }
+
                 return true;
             }
             catch (Exception ex)
@@ -129,6 +141,67 @@ namespace AudioDual.Core.Routing
             }
 
             return false;
+        }
+
+        public bool UpdateTargetLatency(int targetLatencyMs)
+        {
+            int previousLatencyMs = _options.TargetLatencyMs;
+            _options.TargetLatencyMs = targetLatencyMs;
+            int appliedLatencyMs = _options.TargetLatencyMs;
+            if (_options.TargetLatencyMs == previousLatencyMs)
+            {
+                return true;
+            }
+
+            bool succeeded = true;
+
+            foreach (var pair in _activeChannels.ToArray())
+            {
+                if (!_activeChannels.TryGetValue(pair.Key, out var currentChannel) ||
+                    !ReferenceEquals(currentChannel, pair.Value))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var device = _deviceRepository.GetDevice(pair.Key);
+                    var replacement = new AudioOutputChannel(
+                        device,
+                        _captureService.WaveFormat,
+                        currentChannel.Volume,
+                        _options,
+                        _telemetry,
+                        _threadBooster,
+                        _logger);
+
+                    if (!_activeChannels.TryUpdate(pair.Key, replacement, currentChannel))
+                    {
+                        replacement.DisposeWithoutTelemetryRemoval();
+                        continue;
+                    }
+
+                    try
+                    {
+                        replacement.Start();
+                        currentChannel.DisposeWithoutTelemetryRemoval();
+                    }
+                    catch
+                    {
+                        _activeChannels.TryUpdate(pair.Key, currentChannel, replacement);
+                        replacement.Dispose();
+                        throw;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    succeeded = false;
+                    _logger.LogError("AudioRouter",
+                        $"Error applying {appliedLatencyMs}ms latency to device '{pair.Key}'.", ex);
+                }
+            }
+
+            return succeeded;
         }
 
         private void OnCaptureDataAvailable(object? sender, AudioCaptureEventArgs e)

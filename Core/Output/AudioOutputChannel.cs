@@ -5,6 +5,8 @@ using AudioDual.Core.Routing;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+using System.Diagnostics;
+using System.Threading;
 
 namespace AudioDual.Core.Output
 {
@@ -25,6 +27,9 @@ namespace AudioDual.Core.Output
         private readonly VolumeSampleProvider _volumeProvider;
         private readonly LatencyTelemetry _telemetry;
         private readonly IAppLogger _logger;
+        private readonly int _prefillBytes;
+        private readonly int _prefillTimeoutMs;
+        private int _started;
 
         public string DeviceId { get; }
 
@@ -85,6 +90,10 @@ namespace AudioDual.Core.Output
                 ringBufferMilliseconds = minRingBufferMs;
             }
             int ringBufferCapacityBytes = captureFormat.AverageBytesPerSecond * ringBufferMilliseconds / 1000;
+            _prefillBytes = Math.Min(
+                ringBufferCapacityBytes,
+                Math.Max(captureFormat.BlockAlign, captureFormat.AverageBytesPerSecond * devicePeriodMs / 1000));
+            _prefillTimeoutMs = Math.Clamp(devicePeriodMs * 2, 250, 1000);
             var overflowPolicy = options.OverflowPolicy == RingBufferOverflowPolicyOption.DropNewest
                 ? RingBufferOverflowPolicy.DropNewest
                 : RingBufferOverflowPolicy.DropOldest;
@@ -119,6 +128,30 @@ namespace AudioDual.Core.Output
                     $"Device '{device.FriendlyName}' initialized. " +
                     $"Requested latency: {options.TargetLatencyMs}ms, " +
                     $"Output format: {actualLatency}");
+            }
+
+        }
+
+        public void Start()
+        {
+            if (Interlocked.Exchange(ref _started, 1) != 0)
+            {
+                return;
+            }
+
+            long deadline = Stopwatch.GetTimestamp() +
+                (long)(_prefillTimeoutMs * (double)Stopwatch.Frequency / 1000.0);
+
+            while (_ringBuffer.AvailableBytes < _prefillBytes && Stopwatch.GetTimestamp() < deadline)
+            {
+                Thread.Sleep(1);
+            }
+
+            if (_ringBuffer.AvailableBytes < _prefillBytes)
+            {
+                _logger.LogWarning(
+                    "AudioOutputChannel",
+                    $"Starting '{DeviceId}' before the prefill target was reached; continuing to avoid blocking startup.");
             }
 
             _wavePlayer.Play();
@@ -170,6 +203,12 @@ namespace AudioDual.Core.Output
 
         public void Dispose()
         {
+            DisposeWithoutTelemetryRemoval();
+            _telemetry.RemoveChannel(DeviceId);
+        }
+
+        internal void DisposeWithoutTelemetryRemoval()
+        {
             try
             {
                 _wavePlayer.Stop();
@@ -179,8 +218,6 @@ namespace AudioDual.Core.Output
             {
                 _logger.LogError("AudioOutputChannel", $"Error disposing output for device '{DeviceId}'.", ex);
             }
-
-            _telemetry.RemoveChannel(DeviceId);
         }
     }
 }
